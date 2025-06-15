@@ -5,3 +5,6 @@ PyQt5
 scipy
 umap-learn
 pandas
+Flask
+plotly
+h5py

@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALQuery3D - High-Dimensional Embeddings Generator</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1E1E1E;
+            color: #FFFFFF;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .control-panel {
+            width: 400px;
+            background-color: #2B2B2B;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 2px solid #555555;
+        }
+
+        .visualization-panel {
+            flex: 1;
+            background-color: #1E1E1E;
+            position: relative;
+        }
+
+        .title {
+            text-align: center;
+            color: #64FFDA;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
+        }
+
+        .section {
+            margin-bottom: 25px;
+            padding: 15px;
+            background-color: #3C3C3C;
+            border-radius: 8px;
+            border: 1px solid #555555;
+        }
+
+        .section-title {
+            color: #64FFDA;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title::before {
+            content: "▶";
+            margin-right: 8px;
+            color: #64FFDA;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #CCCCCC;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 8px 12px;
+            background-color: #4A4A4A;
+            border: 1px solid #666666;
+            border-radius: 4px;
+            color: #FFFFFF;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #64FFDA;
+            box-shadow: 0 0 5px rgba(100, 255, 218, 0.3);
+        }
+
+        .slider-container {
+            margin-top: 8px;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #555555;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #64FFDA;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(100, 255, 218, 0.5);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #64FFDA;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 5px rgba(100, 255, 218, 0.5);
+        }
+
+        .class-block {
+            background-color: #2B2B2B;
+            border: 1px solid #555555;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .class-title {
+            color: #64FFDA;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            text-align: center;
+            background-color: #1E1E1E;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .param-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .param-label {
+            width: 80px;
+            font-size: 12px;
+            color: #CCCCCC;
+        }
+
+        .param-input {
+            width: 70px;
+            padding: 4px 6px;
+            background-color: #4A4A4A;
+            border: 1px solid #666666;
+            border-radius: 3px;
+            color: #FFFFFF;
+            font-size: 12px;
+            margin-right: 10px;
+        }
+
+        .param-slider {
+            flex: 1;
+            height: 4px;
+            background: #555555;
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .param-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #64FFDA;
+            cursor: pointer;
+        }
+
+        .generate-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #64FFDA, #4FC3F7);
+            color: #000000;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .generate-btn:hover {
+            background: linear-gradient(135deg, #4FC3F7, #29B6F6);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(100, 255, 218, 0.3);
+        }
+
+        .generate-btn:disabled {
+            background: #555555;
+            color: #888888;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #64FFDA;
+            margin-top: 10px;
+        }
+
+        .loading::after {
+            content: "";
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #64FFDA;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .stats {
+            background-color: #2B2B2B;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 1px solid #555555;
+        }
+
+        .stats-title {
+            color: #64FFDA;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stats-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .stats-label {
+            color: #CCCCCC;
+        }
+
+        .stats-value {
+            color: #FFFFFF;
+            font-weight: bold;
+        }
+
+        .method-selector {
+            margin-bottom: 15px;
+        }
+
+        .method-btn {
+            padding: 8px 15px;
+            margin-right: 10px;
+            background-color: #4A4A4A;
+            color: #FFFFFF;
+            border: 1px solid #666666;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .method-btn.active {
+            background-color: #64FFDA;
+            color: #000000;
+            border-color: #64FFDA;
+        }
+
+        .method-btn:hover {
+            background-color: #555555;
+        }
+
+        .method-btn.active:hover {
+            background-color: #4FC3F7;
+        }
+
+        #plot {
+            width: 100%;
+            height: 100%;
+        }
+
+        .error-message {
+            background-color: #FF4444;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #2B2B2B;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #64FFDA;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4FC3F7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="control-panel">
+            <div class="title">Embedding Generator</div>
+
+            <!-- 类别数量选择 -->
+            <div class="section">
+                <div class="section-title">Configuration</div>
+                <div class="form-group">
+                    <label for="num-classes">Number of Classes:</label>
+                    <select id="num-classes" class="form-control" onchange="updateClassBlocks()">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="embedding-dim">Embedding Dimension:</label>
+                    <input type="number" id="embedding-dim" class="form-control" min="3" max="2048" step="1" value="128"
+                        oninput="updateSlider('embedding-dim', 'embedding-dim-slider')">
+                    <div class="slider-container">
+                        <input type="range" id="embedding-dim-slider" class="slider" min="3" max="2048" value="128"
+                            oninput="updateInput('embedding-dim-slider', 'embedding-dim')">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 类别参数区域 -->
+            <div class="section">
+                <div class="section-title">Class Parameters</div>
+                <div id="class-blocks"></div>
+            </div>
+
+            <!-- 全局参数 -->
+            <div class="section">
+                <div class="section-title">Global Parameters</div>
+                <div class="form-group">
+                    <label for="inter-distance">Inter-class Distance:</label>
+                    <input type="number" id="inter-distance" class="form-control" min="0" max="1" step="0.01"
+                        value="0.5" oninput="updateSlider('inter-distance', 'inter-distance-slider')">
+                    <div class="slider-container">
+                        <input type="range" id="inter-distance-slider" class="slider" min="0" max="100" value="50"
+                            oninput="updateInput('inter-distance-slider', 'inter-distance')">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 降维方法选择 -->
+            <div class="section">
+                <div class="section-title">Dimensionality Reduction</div>
+                <div class="method-selector">
+                    <button class="method-btn active" onclick="selectMethod('pca')">PCA</button>
+                    <button class="method-btn" onclick="selectMethod('tsne')">t-SNE</button>
+                    <button class="method-btn" onclick="selectMethod('umap')">UMAP</button>
+                </div>
+            </div>
+
+            <!-- 生成按钮 -->
+            <button id="generate-btn" class="generate-btn" onclick="generateEmbeddings()">
+                Generate Embeddings
+            </button>
+            <div id="loading" class="loading">Generating embeddings...</div>
+            <div id="error-message" class="error-message"></div>
+
+            <!-- 统计信息 -->
+            <div id="stats" class="stats" style="display: none;">
+                <div class="stats-title">Statistics</div>
+                <div class="stats-item">
+                    <span class="stats-label">Total Samples:</span>
+                    <span class="stats-value" id="total-samples">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Classes:</span>
+                    <span class="stats-value" id="num-classes-stat">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Embedding Dim:</span>
+                    <span class="stats-value" id="embedding-dim">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Method:</span>
+                    <span class="stats-value" id="current-method">PCA</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Range:</span>
+                    <span class="stats-value" id="embedding-range">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Cache:</span>
+                    <span class="stats-value" id="cache-status">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="visualization-panel">
+            <div id="plot"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentMethod = 'pca';
+        let hasData = false;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function () {
+            updateClassBlocks();
+        });
+
+        function updateClassBlocks() {
+            const numClasses = parseInt(document.getElementById('num-classes').value);
+            const container = document.getElementById('class-blocks');
+            container.innerHTML = '';
+
+            for (let i = 0; i < numClasses; i++) {
+                const classBlock = createClassBlock(i);
+                container.appendChild(classBlock);
+            }
+        }
+
+        function createClassBlock(classId) {
+            const block = document.createElement('div');
+            block.className = 'class-block';
+            block.innerHTML = `
+                <div class="class-title">Class ${classId}</div>
+                <div class="param-row">
+                    <span class="param-label">Samples:</span>
+                    <input type="number" class="param-input" id="samples-${classId}" 
+                           min="10" max="5000" value="100" 
+                           oninput="updateSlider('samples-${classId}', 'samples-slider-${classId}')">
+                    <input type="range" class="param-slider" id="samples-slider-${classId}" 
+                           min="10" max="5000" value="100" 
+                           oninput="updateInput('samples-slider-${classId}', 'samples-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Dispersion:</span>
+                    <input type="number" class="param-input" id="dispersion-${classId}" 
+                           min="0" max="1" step="0.01" value="0.5" 
+                           oninput="updateSlider('dispersion-${classId}', 'dispersion-slider-${classId}')">
+                    <input type="range" class="param-slider" id="dispersion-slider-${classId}" 
+                           min="0" max="100" value="50" 
+                           oninput="updateInput('dispersion-slider-${classId}', 'dispersion-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Curvature:</span>
+                    <input type="number" class="param-input" id="curvature-${classId}" 
+                           min="0" max="1" step="0.01" value="0.2" 
+                           oninput="updateSlider('curvature-${classId}', 'curvature-slider-${classId}')">
+                    <input type="range" class="param-slider" id="curvature-slider-${classId}" 
+                           min="0" max="100" value="20" 
+                           oninput="updateInput('curvature-slider-${classId}', 'curvature-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Flatness:</span>
+                    <input type="number" class="param-input" id="flatness-${classId}" 
+                           min="0" max="1" step="0.01" value="0.7" 
+                           oninput="updateSlider('flatness-${classId}', 'flatness-slider-${classId}')">
+                    <input type="range" class="param-slider" id="flatness-slider-${classId}" 
+                           min="0" max="100" value="70" 
+                           oninput="updateInput('flatness-slider-${classId}', 'flatness-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Correlation:</span>
+                    <input type="number" class="param-input" id="correlation-${classId}" 
+                           min="0" max="1" step="0.01" value="0.3" 
+                           oninput="updateSlider('correlation-${classId}', 'correlation-slider-${classId}')">
+                    <input type="range" class="param-slider" id="correlation-slider-${classId}" 
+                           min="0" max="100" value="30" 
+                           oninput="updateInput('correlation-slider-${classId}', 'correlation-${classId}')">
+                </div>
+            `;
+            return block;
+        }
+
+        function updateSlider(inputId, sliderId) {
+            const input = document.getElementById(inputId);
+            const slider = document.getElementById(sliderId);
+            const value = parseFloat(input.value);
+
+            if (inputId.includes('samples') || inputId.includes('embedding-dim')) {
+                // samples和embedding-dim直接使用原值
+                slider.value = value;
+            } else {
+                // 其他参数需要乘以100转换为滑动条值
+                slider.value = Math.round(value * 100);
+            }
+        }
+
+        function updateInput(sliderId, inputId) {
+            const slider = document.getElementById(sliderId);
+            const input = document.getElementById(inputId);
+            const value = parseInt(slider.value);
+
+            if (inputId.includes('samples') || inputId.includes('embedding-dim')) {
+                // samples和embedding-dim直接使用滑动条值
+                input.value = value;
+            } else {
+                // 其他参数需要除以100转换为0-1范围
+                input.value = (value / 100).toFixed(2);
+            }
+        }
+
+        function selectMethod(method) {
+            currentMethod = method;
+
+            // 更新按钮状态
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 如果已有数据，重新降维
+            if (hasData) {
+                reduceDimensions(method);
+            }
+        }
+
+        function generateEmbeddings() {
+            const numClasses = parseInt(document.getElementById('num-classes').value);
+            const interDistance = parseFloat(document.getElementById('inter-distance').value);
+            const embeddingDim = parseInt(document.getElementById('embedding-dim').value);
+
+            // 收集类别参数
+            const classParams = {};
+            for (let i = 0; i < numClasses; i++) {
+                classParams[i] = {
+                    samples: parseInt(document.getElementById(`samples-${i}`).value),
+                    dispersion: parseFloat(document.getElementById(`dispersion-${i}`).value),
+                    curvature: parseFloat(document.getElementById(`curvature-${i}`).value),
+                    flatness: parseFloat(document.getElementById(`flatness-${i}`).value),
+                    correlation: parseFloat(document.getElementById(`correlation-${i}`).value)
+                };
+            }
+
+            // 显示加载状态
+            document.getElementById('generate-btn').disabled = true;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error-message').style.display = 'none';
+
+            // 发送请求
+            fetch('/api/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    num_classes: numClasses,
+                    class_params: classParams,
+                    inter_class_distance: interDistance,
+                    embedding_dim: embeddingDim
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 显示3D图
+                        const plotData = JSON.parse(data.plot);
+                        Plotly.newPlot('plot', plotData.data, plotData.layout, { responsive: true });
+
+                        // 更新统计信息
+                        updateStats(data.stats);
+                        hasData = true;
+                    } else {
+                        showError(data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Network error: ' + error.message);
+                })
+                .finally(() => {
+                    document.getElementById('generate-btn').disabled = false;
+                    document.getElementById('loading').style.display = 'none';
+                });
+        }
+
+        function reduceDimensions(method) {
+            // 显示加载状态
+            document.getElementById('cache-status').textContent = 'Loading...';
+
+            // 获取当前embedding维度
+            const embeddingDim = parseInt(document.getElementById('embedding-dim').value);
+
+            // 如果是3维，显示提示信息
+            if (embeddingDim === 3) {
+                document.getElementById('current-method').textContent = 'ORIGINAL (3D)';
+                document.getElementById('cache-status').textContent = 'No reduction needed';
+            }
+
+            fetch('/api/reduce', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    method: method,
+                    n_components: 3
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const plotData = JSON.parse(data.plot);
+                        Plotly.newPlot('plot', plotData.data, plotData.layout, { responsive: true });
+                        document.getElementById('current-method').textContent = method.toUpperCase();
+                        document.getElementById('cache-status').textContent = 'Cached';
+                    } else {
+                        showError(data.error);
+                        document.getElementById('cache-status').textContent = 'Error';
+                    }
+                })
+                .catch(error => {
+                    showError('Network error: ' + error.message);
+                    document.getElementById('cache-status').textContent = 'Error';
+                });
+        }
+
+        function updateStats(stats) {
+            document.getElementById('total-samples').textContent = stats.total_samples;
+            document.getElementById('num-classes-stat').textContent = stats.num_classes;
+            document.getElementById('embedding-dim').textContent = stats.embedding_dim;
+            document.getElementById('embedding-range').textContent = stats.embedding_range || '-';
+            document.getElementById('current-method').textContent = currentMethod.toUpperCase();
+            document.getElementById('cache-status').textContent = 'Generated';
+            document.getElementById('stats').style.display = 'block';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>

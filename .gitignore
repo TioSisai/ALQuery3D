@@ -1,3 +1,5 @@
 *.png
-/tmp/
 *.npy
+*.h5
+/data/
+/tmp/

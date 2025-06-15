@@ -150,7 +150,7 @@ def demo_dimensionality_reduction():
         dispersion=[0.3, 0.5, 0.7, 0.9],     # 不同的分散度
         curvature=[0.1, 0.3, 0.5, 0.7],      # 不同的曲度
         flatness=[0.4, 0.6, 0.8, 1.0],       # 不同的扁平度
-        inter_class_distance=0.7,
+        inter_class_distance=0.01,
         intra_class_correlation=[0.2, 0.4, 0.6, 0.8]  # 不同的相关性
     )
 

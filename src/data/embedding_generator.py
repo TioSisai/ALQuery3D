@@ -49,7 +49,8 @@ class EmbeddingGenerator:
                                       curvature: Union[float, List[float]] = 0.1,
                                       flatness: Union[float, List[float]] = 0.8,
                                       inter_class_distance: float = 0.5,
-                                      intra_class_correlation: Union[float, List[float]] = 0.3) -> Tuple[np.ndarray, np.ndarray]:
+                                      intra_class_correlation: Union[float, List[float]] = 0.3,
+                                      embedding_dim: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         生成具有聚类特性的高维embeddings
 
@@ -65,6 +66,7 @@ class EmbeddingGenerator:
             inter_class_distance: 类间距离，控制不同类别中心之间的距离 (0.0-1.0)
             intra_class_correlation: 类内相关性，控制类内特征的相关程度 (0.0-1.0)
                                    可以是单个值或每个类别的列表
+            embedding_dim: embedding维度 (3-2048)，如果提供则覆盖初始化时的维度
 
         Returns:
             embeddings: 生成的高维embeddings (n_samples, embedding_dim)
@@ -72,6 +74,12 @@ class EmbeddingGenerator:
         """
         if n_classes is None:
             n_classes = len(n_samples_per_class)
+
+        # 设置embedding维度
+        if embedding_dim is not None:
+            if not (3 <= embedding_dim <= 2048):
+                raise ValueError(f"embedding_dim必须在3-2048之间，当前值: {embedding_dim}")
+            self.embedding_dim = embedding_dim
 
         # 将参数标准化为列表形式
         dispersion_list = self._normalize_parameter(dispersion, n_classes, 'dispersion')
@@ -82,6 +90,13 @@ class EmbeddingGenerator:
         # 验证inter_class_distance参数
         if not (0.0 <= inter_class_distance <= 1.0):
             raise ValueError(f"inter_class_distance必须在0.0-1.0之间，当前值: {inter_class_distance}")
+
+        # 映射参数到实际范围
+        dispersion_mapped = self._map_parameter_to_range(dispersion_list, "dispersion")
+        curvature_mapped = self._map_parameter_to_range(curvature_list, "curvature")
+        flatness_mapped = self._map_parameter_to_range(flatness_list, "flatness")
+        correlation_mapped = self._map_parameter_to_range(correlation_list, "intra_class_correlation")
+        inter_distance_mapped = self._map_parameter_to_range([inter_class_distance], "inter_class_distance")[0]
 
         # 保存生成参数
         self.generation_params = {
@@ -95,7 +110,7 @@ class EmbeddingGenerator:
         }
 
         # 生成类别中心
-        self.class_centers = self._generate_class_centers(n_classes, inter_class_distance)
+        self.class_centers = self._generate_class_centers(n_classes, inter_distance_mapped)
 
         # 生成每个类别的样本
         all_embeddings = []
@@ -104,10 +119,10 @@ class EmbeddingGenerator:
         for class_idx, n_samples in enumerate(n_samples_per_class):
             class_embeddings = self._generate_class_embeddings(
                 class_idx, n_samples,
-                dispersion_list[class_idx],
-                curvature_list[class_idx],
-                flatness_list[class_idx],
-                correlation_list[class_idx]
+                dispersion_mapped[class_idx],
+                curvature_mapped[class_idx],
+                flatness_mapped[class_idx],
+                correlation_mapped[class_idx]
             )
             all_embeddings.append(class_embeddings)
             all_labels.extend([class_idx] * n_samples)
@@ -115,7 +130,33 @@ class EmbeddingGenerator:
         self.embeddings = np.vstack(all_embeddings)
         self.labels = np.array(all_labels)
 
+        # 标准化embeddings到-1~1范围
+        self.embeddings = self._standardize_embeddings(self.embeddings)
+
         return self.embeddings, self.labels
+
+    def _standardize_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
+        """
+        将embeddings标准化到-1~1范围
+
+        Args:
+            embeddings: 原始embeddings
+
+        Returns:
+            标准化后的embeddings
+        """
+        # 计算每个维度的最小值和最大值
+        min_vals = np.min(embeddings, axis=0)
+        max_vals = np.max(embeddings, axis=0)
+
+        # 避免除零错误
+        ranges = max_vals - min_vals
+        ranges[ranges == 0] = 1.0
+
+        # 标准化到-1~1范围
+        standardized = 2 * (embeddings - min_vals) / ranges - 1
+
+        return standardized
 
     def _normalize_parameter(self, param: Union[float, List[float]], n_classes: int, param_name: str) -> List[float]:
         """
@@ -147,10 +188,46 @@ class EmbeddingGenerator:
 
         return param_list
 
+    def _map_parameter_to_range(self, normalized_values: List[float], param_name: str) -> List[float]:
+        """
+        将0-1范围的参数映射到实际使用范围
+
+        Args:
+            normalized_values: 0-1范围的参数值列表
+            param_name: 参数名称
+
+        Returns:
+            list: 映射后的参数值列表
+        """
+        mapped_values = []
+
+        for val in normalized_values:
+            if param_name == 'dispersion':
+                # 分散度: 0 -> 0.001 (接近0), 1 -> 20.0 (非常大)
+                mapped_val = 0.001 + val * (20.0 - 0.001)
+            elif param_name == 'curvature':
+                # 曲度: 0 -> 0.0, 1 -> 5.0 (非常大的非线性变形)
+                mapped_val = val * 5.0
+            elif param_name == 'flatness':
+                # 扁平度: 0 -> 0.001 (接近0), 1 -> 1.0 (无压缩)
+                mapped_val = 0.001 + val * (1.0 - 0.001)
+            elif param_name == 'intra_class_correlation':
+                # 类内相关性: 0 -> 0.0, 1 -> 0.99 (接近完全相关)
+                mapped_val = val * 0.99
+            elif param_name == 'inter_class_distance':
+                # 类间距离: 0 -> 0.1, 1 -> 50.0 (非常大的距离)
+                mapped_val = 0.1 + val * (50.0 - 0.1)
+            else:
+                mapped_val = val
+
+            mapped_values.append(mapped_val)
+
+        return mapped_values
+
     def _generate_class_centers(self, n_classes: int, inter_class_distance: float) -> np.ndarray:
         """生成类别中心点"""
-        # 将0-1范围的inter_class_distance映射到实际距离
-        actual_distance = 1.0 + inter_class_distance * 9.0  # 映射到1.0-10.0
+        # inter_class_distance已经是映射后的实际距离
+        actual_distance = inter_class_distance
 
         centers = []
 
@@ -203,9 +280,8 @@ class EmbeddingGenerator:
         curved_samples = self._apply_curvature(flattened_samples, curvature)
 
         # 4. 应用分散度缩放
-        # 将0-1范围的dispersion映射到实际缩放因子
-        actual_dispersion = 0.1 + dispersion * 2.9  # 映射到0.1-3.0
-        dispersed_samples = curved_samples * actual_dispersion
+        # dispersion已经是映射后的实际缩放因子
+        dispersed_samples = curved_samples * dispersion
 
         # 5. 平移到类别中心
         final_samples = dispersed_samples + center
@@ -324,6 +400,15 @@ class EmbeddingGenerator:
         """
         if self.embeddings is None:
             raise ValueError("请先生成embeddings")
+
+        # 如果原始embedding维度为3且要求降维到3维，直接返回原始数据
+        if self.embedding_dim == 3 and n_components == 3:
+            self.dimensionality_reduction_info = {
+                'method': 'original',
+                'n_components': 3,
+                'note': '原始数据已为3维，无需降维'
+            }
+            return self.embeddings.copy()
 
         if method == 'pca':
             reducer = PCA(n_components=n_components, random_state=self.random_state)
