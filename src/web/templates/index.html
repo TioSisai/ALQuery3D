@@ -403,6 +403,14 @@
                 </div>
             </div>
 
+            <!-- 生成按钮 -->
+            <div class="section">
+                <button id="generate-btn" class="generate-btn" onclick="generateEmbeddings()">
+                    Generate Embeddings
+                </button>
+                <div id="loading" class="loading">Generating embeddings...</div>
+            </div>
+
             <!-- 降维方法选择 -->
             <div class="section">
                 <div class="section-title">Dimensionality Reduction</div>
@@ -413,11 +421,51 @@
                 </div>
             </div>
 
-            <!-- 生成按钮 -->
-            <button id="generate-btn" class="generate-btn" onclick="generateEmbeddings()">
-                Generate Embeddings
-            </button>
-            <div id="loading" class="loading">Generating embeddings...</div>
+            <!-- FPS控制 -->
+            <div class="section" id="fps-section" style="display: none;">
+                <div class="section-title">FPS Sampling</div>
+                <div class="form-group">
+                    <label for="fps-distance">Distance Metric:</label>
+                    <select id="fps-distance" class="form-control">
+                        <option value="euclidean">Euclidean</option>
+                        <option value="cosine">Cosine</option>
+                        <option value="chebyshev">Chebyshev</option>
+                        <option value="manhattan">Manhattan</option>
+                        <option value="minkowski">Minkowski</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="fps-samples">Number of Samples:</label>
+                    <input type="number" id="fps-samples" class="form-control" min="2" max="1000" value="50">
+                </div>
+                <div class="form-group">
+                    <label for="fps-start-idx">Start Index:</label>
+                    <input type="number" id="fps-start-idx" class="form-control" min="0" value="0" readonly>
+                    <small style="color: #888;">Click a point in the plot to set start index</small>
+                </div>
+                <button id="fps-start-btn" class="generate-btn" onclick="startFPS()" disabled>
+                    Start FPS Sampling
+                </button>
+                <div id="fps-loading" class="loading">Running FPS sampling...</div>
+            </div>
+
+            <!-- FPS范围查看 -->
+            <div class="section" id="fps-range-section" style="display: none;">
+                <div class="section-title">FPS Range View</div>
+                <div class="form-group">
+                    <label for="fps-range-start">Range Start:</label>
+                    <input type="number" id="fps-range-start" class="form-control" min="1" value="1">
+                </div>
+                <div class="form-group">
+                    <label for="fps-range-end">Range End:</label>
+                    <input type="number" id="fps-range-end" class="form-control" min="1" value="10">
+                </div>
+                <button id="fps-range-btn" class="generate-btn" onclick="viewFPSRange()">
+                    View Range
+                </button>
+                <div id="fps-range-loading" class="loading">Loading range view...</div>
+            </div>
+
             <div id="error-message" class="error-message"></div>
 
             <!-- 统计信息 -->
@@ -448,6 +496,28 @@
                     <span class="stats-value" id="cache-status">-</span>
                 </div>
             </div>
+
+            <!-- FPS统计信息 -->
+            <div id="fps-stats" class="stats" style="display: none;">
+                <div class="stats-title">FPS Statistics</div>
+                <div class="stats-item">
+                    <span class="stats-label">Selected Points:</span>
+                    <span class="stats-value" id="fps-total-points">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Total Distance:</span>
+                    <span class="stats-value" id="fps-total-distance">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Avg Step Distance:</span>
+                    <span class="stats-value" id="fps-avg-distance">-</span>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-label">Distance Metric:</span>
+                    <span class="stats-value" id="fps-distance-metric">-</span>
+                </div>
+                <div id="fps-class-distribution"></div>
+            </div>
         </div>
 
         <div class="visualization-panel">
@@ -458,6 +528,8 @@
     <script>
         let currentMethod = 'pca';
         let hasData = false;
+        let fpsData = null;
+        let selectedStartIndex = null;
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function () {
@@ -618,6 +690,9 @@
         }
 
         function generateEmbeddings() {
+            // 重置FPS相关状态
+            resetFPSState();
+
             const numClasses = parseInt(document.getElementById('num-classes').value);
             const interDistance = parseFloat(document.getElementById('inter-distance').value);
             const hyperplaneParallelism = parseFloat(document.getElementById('hyperplane-parallelism').value);
@@ -666,9 +741,15 @@
                         const plotData = JSON.parse(data.plot);
                         Plotly.newPlot('plot', plotData.data, plotData.layout, { responsive: true });
 
+                        // 添加点击事件监听
+                        addPlotClickListener();
+
                         // 更新统计信息
                         updateStats(data.stats);
                         hasData = true;
+
+                        // 显示FPS控制
+                        document.getElementById('fps-section').style.display = 'block';
                     } else {
                         showError(data.error);
                     }
@@ -710,6 +791,10 @@
                     if (data.success) {
                         const plotData = JSON.parse(data.plot);
                         Plotly.newPlot('plot', plotData.data, plotData.layout, { responsive: true });
+
+                        // 重新添加点击事件监听器
+                        addPlotClickListener();
+
                         document.getElementById('current-method').textContent = method.toUpperCase();
                         document.getElementById('cache-status').textContent = 'Cached';
                     } else {
@@ -737,6 +822,209 @@
             const errorDiv = document.getElementById('error-message');
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
+        }
+
+        function resetFPSState() {
+            // 重置FPS相关的全局变量
+            fpsData = null;
+            selectedStartIndex = null;
+
+            // 隐藏FPS相关的界面元素
+            document.getElementById('fps-section').style.display = 'none';
+            document.getElementById('fps-range-section').style.display = 'none';
+            document.getElementById('fps-stats').style.display = 'none';
+
+            // 重置FPS控制元素
+            document.getElementById('fps-start-idx').value = '0';
+            document.getElementById('fps-start-btn').disabled = true;
+            document.getElementById('fps-samples').value = '50';
+            document.getElementById('fps-distance').value = 'euclidean';
+
+            // 重置范围控制元素
+            document.getElementById('fps-range-start').value = '1';
+            document.getElementById('fps-range-end').value = '10';
+
+            // 清除错误信息
+            document.getElementById('error-message').style.display = 'none';
+        }
+
+        function addPlotClickListener() {
+            const plotDiv = document.getElementById('plot');
+            plotDiv.on('plotly_click', function (data) {
+                if (data.points && data.points.length > 0) {
+                    const point = data.points[0];
+                    // 从customdata获取原始索引
+                    let pointIndex;
+                    if (point.customdata !== undefined) {
+                        pointIndex = point.customdata;
+                    } else {
+                        pointIndex = point.pointIndex;
+                    }
+
+                    // 设置起始索引
+                    selectedStartIndex = pointIndex;
+                    document.getElementById('fps-start-idx').value = pointIndex;
+                    document.getElementById('fps-start-btn').disabled = false;
+
+                    console.log('Selected point index:', pointIndex);
+                    showMessage(`Selected point index: ${pointIndex}`);
+                }
+            });
+        }
+
+        function showMessage(message) {
+            // 创建临时消息显示
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #4CAF50;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                z-index: 1000;
+                font-size: 14px;
+            `;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+
+            setTimeout(() => {
+                document.body.removeChild(messageDiv);
+            }, 3000);
+        }
+
+        function startFPS() {
+            if (selectedStartIndex === null) {
+                showError('Please select a start point by clicking on the plot');
+                return;
+            }
+
+            const distanceMetric = document.getElementById('fps-distance').value;
+            const numSamples = parseInt(document.getElementById('fps-samples').value);
+            const startIdx = parseInt(document.getElementById('fps-start-idx').value);
+
+            // 显示加载状态
+            document.getElementById('fps-start-btn').disabled = true;
+            document.getElementById('fps-loading').style.display = 'block';
+
+            fetch('/api/fps/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    start_idx: startIdx,
+                    num_samples: numSamples,
+                    distance_metric: distanceMetric
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 更新可视化
+                        const plotData = JSON.parse(data.plot);
+                        Plotly.newPlot('plot', plotData.data, plotData.layout, { responsive: true });
+
+                        // 重新添加点击监听
+                        addPlotClickListener();
+
+                        // 保存FPS数据
+                        fpsData = data;
+
+                        // 更新FPS统计信息
+                        updateFPSStats(data.stats);
+
+                        // 显示范围查看控制
+                        document.getElementById('fps-range-section').style.display = 'block';
+                        document.getElementById('fps-range-end').max = data.selected_indices.length;
+                        document.getElementById('fps-range-end').value = Math.min(10, data.selected_indices.length);
+                    } else {
+                        showError(data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Network error: ' + error.message);
+                })
+                .finally(() => {
+                    document.getElementById('fps-start-btn').disabled = false;
+                    document.getElementById('fps-loading').style.display = 'none';
+                });
+        }
+
+        function viewFPSRange() {
+            if (!fpsData) {
+                showError('No FPS data available');
+                return;
+            }
+
+            const startRange = parseInt(document.getElementById('fps-range-start').value);
+            const endRange = parseInt(document.getElementById('fps-range-end').value);
+
+            // 转换为0-based索引
+            const startRange0Based = startRange - 1;
+            const endRange0Based = endRange - 1;
+
+            // 显示加载状态
+            document.getElementById('fps-range-btn').disabled = true;
+            document.getElementById('fps-range-loading').style.display = 'block';
+
+            fetch('/api/fps/range', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    start_range: startRange0Based,
+                    end_range: endRange0Based
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 更新可视化
+                        const plotData = JSON.parse(data.plot);
+                        Plotly.newPlot('plot', plotData.data, plotData.layout, { responsive: true });
+
+                        // 重新添加点击监听
+                        addPlotClickListener();
+
+                        // 更新范围统计信息
+                        updateFPSStats(data.range_stats);
+                    } else {
+                        showError(data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Network error: ' + error.message);
+                })
+                .finally(() => {
+                    document.getElementById('fps-range-btn').disabled = false;
+                    document.getElementById('fps-range-loading').style.display = 'none';
+                });
+        }
+
+        function updateFPSStats(stats) {
+            document.getElementById('fps-total-points').textContent = stats.total_points;
+            document.getElementById('fps-total-distance').textContent = stats.total_distance.toFixed(3);
+            document.getElementById('fps-avg-distance').textContent = stats.average_step_distance.toFixed(3);
+            document.getElementById('fps-distance-metric').textContent = stats.distance_metric.toUpperCase();
+
+            // 更新类别分布
+            const distributionDiv = document.getElementById('fps-class-distribution');
+            distributionDiv.innerHTML = '';
+
+            for (const [classId, count] of Object.entries(stats.class_distribution)) {
+                const item = document.createElement('div');
+                item.className = 'stats-item';
+                item.innerHTML = `
+                    <span class="stats-label">Class ${classId}:</span>
+                    <span class="stats-value">${count} points</span>
+                `;
+                distributionDiv.appendChild(item);
+            }
+
+            document.getElementById('fps-stats').style.display = 'block';
         }
     </script>
 </body>

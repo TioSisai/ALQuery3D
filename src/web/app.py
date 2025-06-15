@@ -16,6 +16,7 @@ import plotly.graph_objs as go
 import plotly.utils
 
 from src.data.embedding_generator import EmbeddingGenerator
+from src.algorithms.fps import create_fps_sampler
 
 app = Flask(__name__)
 app.secret_key = 'alquery3d_secret_key'
@@ -61,6 +62,11 @@ def generate_embeddings():
     try:
         # 清理之前的数据文件
         cleanup_data_file()
+
+        # 重置全局变量
+        current_generator = None
+        current_embeddings = None
+        current_labels = None
 
         data = request.json
 
@@ -189,6 +195,7 @@ def create_3d_plot(embeddings_3d, labels):
 
     for i, class_id in enumerate(np.unique(labels)):
         mask = labels == class_id
+        indices = np.where(mask)[0]  # 获取原始索引
         trace = go.Scatter3d(
             x=embeddings_3d[mask, 0],
             y=embeddings_3d[mask, 1],
@@ -200,7 +207,8 @@ def create_3d_plot(embeddings_3d, labels):
                 opacity=0.7
             ),
             name=f'Class {class_id}',
-            text=[f'Class {class_id}'] * np.sum(mask),
+            text=[f'Class {class_id} (Index: {idx})' for idx in indices],
+            customdata=indices,  # 添加原始索引作为自定义数据
             hovertemplate='<b>%{text}</b><br>' +
             'X: %{x:.2f}<br>' +
             'Y: %{y:.2f}<br>' +
@@ -288,6 +296,466 @@ def reduce_dimensions():
             'success': False,
             'error': str(e)
         })
+
+
+@app.route('/api/fps/start', methods=['POST'])
+def start_fps():
+    """开始FPS采样"""
+    global current_embeddings, current_labels
+
+    if current_embeddings is None:
+        return jsonify({
+            'success': False,
+            'error': 'No embeddings generated yet'
+        })
+
+    try:
+        data = request.json
+        start_idx = int(data['start_idx'])
+        num_samples = int(data['num_samples'])
+        distance_metric = data.get('distance_metric', 'euclidean')
+
+        # 验证参数
+        if start_idx >= len(current_embeddings):
+            return jsonify({
+                'success': False,
+                'error': f'Start index {start_idx} out of range [0, {len(current_embeddings) - 1}]'
+            })
+
+        if num_samples > len(current_embeddings):
+            return jsonify({
+                'success': False,
+                'error': f'Number of samples {num_samples} exceeds total points {len(current_embeddings)}'
+            })
+
+        # 执行FPS采样
+        fps_sampler = create_fps_sampler()
+        selected_indices = fps_sampler.sample(
+            current_embeddings,
+            start_idx,
+            num_samples,
+            distance_metric
+        )
+
+        # 获取统计信息
+        stats = fps_sampler.get_path_statistics(
+            current_embeddings,
+            selected_indices,
+            current_labels,
+            distance_metric
+        )
+
+        # 保存FPS结果到HDF5文件
+        save_fps_results_to_h5(selected_indices, distance_metric, stats)
+
+        # 获取降维后的坐标用于可视化
+        reduced_data = load_reduced_data_from_h5('pca')  # 使用当前的降维方法
+        if reduced_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'No reduced data available for visualization'
+            })
+
+        # 创建包含FPS路径的可视化
+        fig = create_fps_visualization(reduced_data, current_labels, selected_indices)
+
+        return jsonify({
+            'success': True,
+            'selected_indices': selected_indices,
+            'stats': stats,
+            'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/fps/range', methods=['POST'])
+def fps_range_view():
+    """FPS范围查看"""
+    try:
+        data = request.json
+        start_range = int(data['start_range'])
+        end_range = int(data['end_range'])
+
+        # 从HDF5文件加载FPS结果
+        fps_data = load_fps_results_from_h5()
+        if fps_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'No FPS results found'
+            })
+
+        selected_indices = fps_data['selected_indices']
+        distance_metric = fps_data['distance_metric']
+
+        # 验证范围
+        if start_range < 0 or end_range >= len(selected_indices) or start_range > end_range:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid range [{start_range}, {end_range}]'
+            })
+
+        # 获取范围内的索引
+        range_indices = selected_indices[start_range:end_range + 1]
+
+        # 计算范围内的统计信息
+        fps_sampler = create_fps_sampler()
+        range_stats = fps_sampler.get_path_statistics(
+            current_embeddings,
+            range_indices,
+            current_labels,
+            distance_metric
+        )
+
+        # 获取降维后的坐标
+        reduced_data = load_reduced_data_from_h5('pca')
+
+        # 创建范围可视化
+        fig = create_fps_range_visualization(
+            reduced_data,
+            current_labels,
+            selected_indices,
+            range_indices,
+            start_range
+        )
+
+        return jsonify({
+            'success': True,
+            'range_indices': range_indices,
+            'range_stats': range_stats,
+            'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/fps/metrics')
+def get_fps_metrics():
+    """获取可用的距离度量方式"""
+    fps_sampler = create_fps_sampler()
+    return jsonify({
+        'metrics': fps_sampler.get_available_metrics()
+    })
+
+
+def save_fps_results_to_h5(selected_indices, distance_metric, stats):
+    """保存FPS结果到HDF5文件"""
+    with h5py.File(DATA_FILE, 'a') as f:
+        # 删除已存在的FPS数据
+        if 'fps_results' in f:
+            del f['fps_results']
+
+        # 创建FPS结果组
+        fps_group = f.create_group('fps_results')
+        fps_group.create_dataset('selected_indices', data=selected_indices)
+        fps_group.attrs['distance_metric'] = distance_metric
+        fps_group.attrs['total_points'] = stats['total_points']
+        fps_group.attrs['total_distance'] = stats['total_distance']
+
+        # 保存类别分布
+        for class_id, count in stats['class_distribution'].items():
+            fps_group.attrs[f'class_{class_id}_count'] = count
+
+        print(f"已保存FPS结果到: {DATA_FILE}")
+
+
+def load_fps_results_from_h5():
+    """从HDF5文件加载FPS结果"""
+    if not os.path.exists(DATA_FILE):
+        return None
+
+    try:
+        with h5py.File(DATA_FILE, 'r') as f:
+            if 'fps_results' not in f:
+                return None
+
+            fps_group = f['fps_results']
+            selected_indices = fps_group['selected_indices'][:].tolist()
+            distance_metric = fps_group.attrs['distance_metric']
+
+            return {
+                'selected_indices': selected_indices,
+                'distance_metric': distance_metric
+            }
+    except Exception as e:
+        print(f"加载FPS结果时出错: {e}")
+        return None
+
+
+def create_fps_visualization(embeddings_3d, labels, selected_indices):
+    """创建包含FPS路径的3D可视化"""
+    traces = []
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+              '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
+
+    # 添加原始点云（保持正常透明度）
+    for i, class_id in enumerate(np.unique(labels)):
+        mask = labels == class_id
+        indices = np.where(mask)[0]  # 获取原始索引
+        trace = go.Scatter3d(
+            x=embeddings_3d[mask, 0],
+            y=embeddings_3d[mask, 1],
+            z=embeddings_3d[mask, 2],
+            mode='markers',
+            marker=dict(
+                size=4,
+                color=colors[i % len(colors)],
+                opacity=0.6  # 提高透明度，避免过暗
+            ),
+            name=f'Class {class_id}',
+            text=[f'Class {class_id} (Index: {idx})' for idx in indices],
+            customdata=indices,  # 添加原始索引作为自定义数据
+            hovertemplate='<b>%{text}</b><br>' +
+            'X: %{x:.2f}<br>' +
+            'Y: %{y:.2f}<br>' +
+            'Z: %{z:.2f}<extra></extra>'
+        )
+        traces.append(trace)
+
+    # 添加FPS选中的点（亮青色，渐变亮度）
+    if selected_indices:
+        selected_coords = embeddings_3d[selected_indices]
+
+        # 计算亮度渐变（从100%到10%）
+        num_points = len(selected_indices)
+        opacities = np.linspace(1.0, 0.1, num_points)
+
+        # 为每个选中的点创建单独的trace以实现渐变效果
+        for i, (idx, opacity) in enumerate(zip(selected_indices, opacities)):
+            coord = embeddings_3d[idx]
+            # 获取该点的类别
+            point_class = labels[idx]
+
+            # 使用RGB格式确保颜色正确显示
+            rgb_color = f'rgb(0, 255, 255)'
+
+            trace = go.Scatter3d(
+                x=[coord[0]],
+                y=[coord[1]],
+                z=[coord[2]],
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    color=rgb_color,
+                    opacity=opacity,  # 单独设置透明度
+                    line=dict(width=2, color='white')
+                ),
+                name=f'FPS Point {i + 1}' if i == 0 else '',
+                showlegend=(i == 0),
+                text=[f'Class {point_class} (FPS Rank {i + 1}, Index: {idx})'],
+                customdata=[idx],  # 添加原始索引作为数组
+                hovertemplate='<b>Class %{customdata} (FPS Rank ' + str(i + 1) + ')</b><br>' +
+                'X: %{x:.2f}<br>' +
+                'Y: %{y:.2f}<br>' +
+                'Z: %{z:.2f}<extra></extra>'
+            )
+            traces.append(trace)
+
+        # 添加路径连线（亮青色，渐变亮度）
+        for i in range(len(selected_indices) - 1):
+            start_coord = embeddings_3d[selected_indices[i]]
+            end_coord = embeddings_3d[selected_indices[i + 1]]
+
+            # 路径亮度也渐变
+            path_opacity = opacities[i]
+
+            path_trace = go.Scatter3d(
+                x=[start_coord[0], end_coord[0]],
+                y=[start_coord[1], end_coord[1]],
+                z=[start_coord[2], end_coord[2]],
+                mode='lines',
+                line=dict(
+                    width=4,
+                    color='rgb(0, 255, 255)'
+                ),
+                opacity=path_opacity,  # 单独设置透明度
+                name='FPS Path' if i == 0 else '',
+                showlegend=(i == 0),
+                hoverinfo='skip'
+            )
+            traces.append(path_trace)
+
+    layout = go.Layout(
+        title={
+            'text': f'FPS Visualization ({len(selected_indices)} points selected)',
+            'x': 0.5,
+            'font': {'size': 20, 'color': 'white'}
+        },
+        scene=dict(
+            xaxis=dict(title='Component 1', color='white'),
+            yaxis=dict(title='Component 2', color='white'),
+            zaxis=dict(title='Component 3', color='white'),
+            bgcolor='rgba(0,0,0,0)',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        ),
+        paper_bgcolor='#1E1E1E',
+        plot_bgcolor='#1E1E1E',
+        font=dict(color='white'),
+        legend=dict(
+            bgcolor='rgba(0,0,0,0.5)',
+            bordercolor='white',
+            borderwidth=1
+        ),
+        margin=dict(l=0, r=0, t=50, b=0)
+    )
+
+    return {'data': traces, 'layout': layout}
+
+
+def create_fps_range_visualization(embeddings_3d, labels, all_selected_indices, range_indices, start_range):
+    """创建FPS范围可视化"""
+    traces = []
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+              '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
+
+    # 添加原始点云（半透明）
+    for i, class_id in enumerate(np.unique(labels)):
+        mask = labels == class_id
+        indices = np.where(mask)[0]  # 获取原始索引
+        trace = go.Scatter3d(
+            x=embeddings_3d[mask, 0],
+            y=embeddings_3d[mask, 1],
+            z=embeddings_3d[mask, 2],
+            mode='markers',
+            marker=dict(
+                size=3,
+                color=colors[i % len(colors)],
+                opacity=0.2
+            ),
+            name=f'Class {class_id}',
+            text=[f'Class {class_id} (Index: {idx})' for idx in indices],
+            customdata=indices,  # 添加原始索引作为自定义数据
+            hovertemplate='<b>%{text}</b><br>' +
+            'X: %{x:.2f}<br>' +
+            'Y: %{y:.2f}<br>' +
+            'Z: %{z:.2f}<extra></extra>'
+        )
+        traces.append(trace)
+
+    # 添加范围左侧的已选择点（橙色）
+    if start_range > 0:
+        left_indices = all_selected_indices[:start_range]
+        for i, idx in enumerate(left_indices):
+            coord = embeddings_3d[idx]
+            # 获取该点的类别
+            point_class = labels[idx]
+            fps_rank = i + 1  # 在FPS路径中的排名
+
+            trace = go.Scatter3d(
+                x=[coord[0]],
+                y=[coord[1]],
+                z=[coord[2]],
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color='orange',
+                    opacity=0.7
+                ),
+                name='Previous Points' if i == 0 else '',
+                showlegend=(i == 0),
+                text=[f'Class {point_class} (FPS Rank {fps_rank}, Index: {idx})'],
+                customdata=[idx],  # 添加原始索引作为数组
+                hovertemplate='<b>Class %{customdata} (FPS Rank ' + str(fps_rank) + ')</b><br>' +
+                'X: %{x:.2f}<br>' +
+                'Y: %{y:.2f}<br>' +
+                'Z: %{z:.2f}<extra></extra>'
+            )
+            traces.append(trace)
+
+    # 添加范围内的点（亮青色，渐变，更大更不透明）
+    if range_indices:
+        num_range_points = len(range_indices)
+        opacities = np.linspace(1.0, 0.1, num_range_points)
+
+        for i, (idx, opacity) in enumerate(zip(range_indices, opacities)):
+            coord = embeddings_3d[idx]
+            # 获取该点的类别
+            point_class = labels[idx]
+            # 计算在整个FPS路径中的排名
+            fps_rank = start_range + i + 1
+
+            trace = go.Scatter3d(
+                x=[coord[0]],
+                y=[coord[1]],
+                z=[coord[2]],
+                mode='markers',
+                marker=dict(
+                    size=10,  # 更大的点
+                    color='rgb(0, 255, 255)',
+                    opacity=max(opacity, 0.5),  # 单独设置透明度，确保可见性
+                    line=dict(width=2, color='white')
+                ),
+                name=f'Range Points' if i == 0 else '',
+                showlegend=(i == 0),
+                text=[f'Class {point_class} (FPS Rank {fps_rank}, Index: {idx})'],
+                customdata=[idx],  # 添加原始索引作为数组
+                hovertemplate='<b>Class %{customdata} (FPS Rank ' + str(fps_rank) + ')</b><br>' +
+                'X: %{x:.2f}<br>' +
+                'Y: %{y:.2f}<br>' +
+                'Z: %{z:.2f}<extra></extra>'
+            )
+            traces.append(trace)
+
+        # 添加范围内的路径连线
+        for i in range(len(range_indices) - 1):
+            start_coord = embeddings_3d[range_indices[i]]
+            end_coord = embeddings_3d[range_indices[i + 1]]
+
+            path_opacity = max(opacities[i], 0.5)
+
+            path_trace = go.Scatter3d(
+                x=[start_coord[0], end_coord[0]],
+                y=[start_coord[1], end_coord[1]],
+                z=[start_coord[2], end_coord[2]],
+                mode='lines',
+                line=dict(
+                    width=6,  # 更粗的线
+                    color='rgb(0, 255, 255)'
+                ),
+                opacity=path_opacity,  # 单独设置透明度
+                name='Range Path' if i == 0 else '',
+                showlegend=(i == 0),
+                hoverinfo='skip'
+            )
+            traces.append(path_trace)
+
+    layout = go.Layout(
+        title={
+            'text': f'FPS Range View ({len(range_indices)} points in range)',
+            'x': 0.5,
+            'font': {'size': 20, 'color': 'white'}
+        },
+        scene=dict(
+            xaxis=dict(title='Component 1', color='white'),
+            yaxis=dict(title='Component 2', color='white'),
+            zaxis=dict(title='Component 3', color='white'),
+            bgcolor='rgba(0,0,0,0)',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        ),
+        paper_bgcolor='#1E1E1E',
+        plot_bgcolor='#1E1E1E',
+        font=dict(color='white'),
+        legend=dict(
+            bgcolor='rgba(0,0,0,0.5)',
+            bordercolor='white',
+            borderwidth=1
+        ),
+        margin=dict(l=0, r=0, t=50, b=0)
+    )
+
+    return {'data': traces, 'layout': layout}
 
 
 if __name__ == '__main__':
