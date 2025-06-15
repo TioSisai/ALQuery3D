@@ -403,14 +403,6 @@
                 </div>
             </div>
 
-            <!-- 生成按钮 -->
-            <div class="section">
-                <button id="generate-btn" class="generate-btn" onclick="generateEmbeddings()">
-                    Generate Embeddings
-                </button>
-                <div id="loading" class="loading">Generating embeddings...</div>
-            </div>
-
             <!-- 降维方法选择 -->
             <div class="section">
                 <div class="section-title">Dimensionality Reduction</div>
@@ -419,6 +411,14 @@
                     <button class="method-btn" onclick="selectMethod('tsne')">t-SNE</button>
                     <button class="method-btn" onclick="selectMethod('umap')">UMAP</button>
                 </div>
+            </div>
+
+            <!-- 生成按钮 -->
+            <div class="section">
+                <button id="generate-btn" class="generate-btn" onclick="generateEmbeddings()">
+                    Generate Embeddings
+                </button>
+                <div id="loading" class="loading">Generating embeddings...</div>
             </div>
 
             <!-- FPS控制 -->
@@ -676,17 +676,28 @@
 
         function selectMethod(method) {
             currentMethod = method;
-
-            // 更新按钮状态
-            document.querySelectorAll('.method-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
+            updateMethodButtons(method);
 
             // 如果已有数据，重新降维
             if (hasData) {
                 reduceDimensions(method);
             }
+        }
+
+        function updateMethodButtons(method) {
+            // 更新按钮状态
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // 找到对应的按钮并设置为活跃状态
+            const buttons = document.querySelectorAll('.method-btn');
+            buttons.forEach(btn => {
+                if (btn.textContent.toLowerCase() === method.toLowerCase() ||
+                    (btn.textContent === 't-SNE' && method === 'tsne')) {
+                    btn.classList.add('active');
+                }
+            });
         }
 
         function generateEmbeddings() {
@@ -731,7 +742,8 @@
                     class_params: classParams,
                     inter_class_distance: interDistance,
                     inter_hyperplane_parallelism: hyperplaneParallelism,
-                    embedding_dim: embeddingDim
+                    embedding_dim: embeddingDim,
+                    reduction_method: currentMethod  // 发送当前选择的降维方法
                 })
             })
                 .then(response => response.json())
@@ -747,6 +759,13 @@
                         // 更新统计信息
                         updateStats(data.stats);
                         hasData = true;
+
+                        // 更新当前方法状态（确保与后端一致）
+                        if (data.stats.reduction_method) {
+                            currentMethod = data.stats.reduction_method;
+                            // 更新按钮状态
+                            updateMethodButtons(currentMethod);
+                        }
 
                         // 显示FPS控制
                         document.getElementById('fps-section').style.display = 'block';

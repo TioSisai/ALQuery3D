@@ -78,6 +78,7 @@ def generate_embeddings():
         inter_class_distance = data['inter_class_distance']
         inter_hyperplane_parallelism = data.get('inter_hyperplane_parallelism', 0.0)
         embedding_dim = data.get('embedding_dim', 128)
+        initial_reduction_method = data.get('reduction_method', 'pca')  # 获取初始降维方法
 
         # 构建生成器参数
         n_samples_per_class = []
@@ -126,11 +127,14 @@ def generate_embeddings():
         # 保存原始embeddings到HDF5文件
         save_embeddings_to_h5(current_embeddings, current_labels)
 
-        # 降维到3D (PCA)
-        reduced_3d = current_generator.reduce_dimensions(n_components=3, method='pca')
+        # 使用选择的降维方法降维到3D
+        reduced_3d = current_generator.reduce_dimensions(n_components=3, method=initial_reduction_method)
 
-        # 保存PCA降维结果
-        save_reduced_data_to_h5('pca', reduced_3d)
+        # 保存降维结果
+        save_reduced_data_to_h5(initial_reduction_method, reduced_3d)
+
+        # 更新当前降维方法
+        current_reduction_method = initial_reduction_method
 
         # 创建3D散点图
         fig = create_3d_plot(reduced_3d, current_labels)
@@ -141,7 +145,8 @@ def generate_embeddings():
             'num_classes': len(np.unique(current_labels)),
             'class_distribution': np.bincount(current_labels).tolist(),
             'embedding_dim': current_embeddings.shape[1],
-            'embedding_range': f"[{current_embeddings.min():.3f}, {current_embeddings.max():.3f}]"
+            'embedding_range': f"[{current_embeddings.min():.3f}, {current_embeddings.max():.3f}]",
+            'reduction_method': initial_reduction_method
         }
 
         return jsonify({

@@ -1,5 +1,9 @@
 *.png
 *.npy
 *.h5
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 /data/
 /tmp/
