@@ -764,6 +764,11 @@
         }
 
         function reduceDimensions(method) {
+            // 保存当前的FPS范围状态
+            const currentRangeStart = parseInt(document.getElementById('fps-range-start').value) || null;
+            const currentRangeEnd = parseInt(document.getElementById('fps-range-end').value) || null;
+            const fpsRangeVisible = document.getElementById('fps-range-section').style.display !== 'none';
+
             // 显示加载状态
             document.getElementById('cache-status').textContent = 'Loading...';
 
@@ -783,7 +788,10 @@
                 },
                 body: JSON.stringify({
                     method: method,
-                    n_components: 3
+                    n_components: 3,
+                    current_range_start: currentRangeStart,
+                    current_range_end: currentRangeEnd,
+                    fps_range_visible: fpsRangeVisible
                 })
             })
                 .then(response => response.json())
@@ -797,6 +805,32 @@
 
                         document.getElementById('current-method').textContent = method.toUpperCase();
                         document.getElementById('cache-status').textContent = 'Cached';
+
+                        // 恢复FPS状态
+                        if (data.has_fps) {
+                            // 显示FPS相关控制
+                            document.getElementById('fps-range-section').style.display = 'block';
+                            document.getElementById('fps-stats').style.display = 'block';
+
+                            // 恢复范围值
+                            document.getElementById('fps-range-start').value = currentRangeStart || 1;
+                            document.getElementById('fps-range-end').value = currentRangeEnd || Math.min(10, data.fps_data.total_count);
+                            document.getElementById('fps-range-end').max = data.fps_data.total_count;
+
+                            // 保存FPS数据到全局变量
+                            fpsData = {
+                                selected_indices: data.fps_data.selected_indices,
+                                stats: data.range_stats || {} // 如果有范围统计信息则使用
+                            };
+
+                            // 如果后端返回了范围统计信息，更新显示
+                            if (data.range_view && data.range_stats) {
+                                updateFPSStats(data.range_stats);
+                                console.log('Range view restored directly from backend');
+                            }
+
+                            console.log('FPS state restored after dimension reduction');
+                        }
                     } else {
                         showError(data.error);
                         document.getElementById('cache-status').textContent = 'Error';

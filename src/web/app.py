@@ -25,6 +25,7 @@ app.secret_key = 'alquery3d_secret_key'
 current_generator = None
 current_embeddings = None
 current_labels = None
+current_reduction_method = 'pca'  # 当前降维方法
 
 # 数据文件路径
 DATA_DIR = os.path.join(os.path.dirname(__file__), '../../data')
@@ -67,6 +68,7 @@ def generate_embeddings():
         current_generator = None
         current_embeddings = None
         current_labels = None
+        current_reduction_method = 'pca'  # 重置为默认降维方法
 
         data = request.json
 
@@ -245,6 +247,21 @@ def create_3d_plot(embeddings_3d, labels):
     return {'data': traces, 'layout': layout}
 
 
+def create_3d_plot_with_fps(embeddings_3d, labels, fps_data=None):
+    """创建带有FPS路径的3D散点图"""
+    if fps_data is None:
+        # 尝试从H5文件加载FPS数据
+        fps_data = load_fps_results_from_h5()
+
+    if fps_data is None:
+        # 没有FPS数据，返回普通的3D图
+        return create_3d_plot(embeddings_3d, labels)
+
+    # 有FPS数据，创建带路径的可视化
+    selected_indices = fps_data['selected_indices']
+    return create_fps_visualization(embeddings_3d, labels, selected_indices)
+
+
 @app.route('/api/methods')
 def get_methods():
     """获取可用的降维方法"""
@@ -256,7 +273,7 @@ def get_methods():
 @app.route('/api/reduce', methods=['POST'])
 def reduce_dimensions():
     """降维API"""
-    global current_generator, current_embeddings, current_labels
+    global current_generator, current_embeddings, current_labels, current_reduction_method
 
     if current_generator is None or current_embeddings is None:
         return jsonify({
@@ -268,6 +285,14 @@ def reduce_dimensions():
         data = request.json
         method = data.get('method', 'pca')
         n_components = data.get('n_components', 3)
+
+        # 获取前端传递的当前范围状态
+        current_range_start = data.get('current_range_start')
+        current_range_end = data.get('current_range_end')
+        fps_range_visible = data.get('fps_range_visible', False)
+
+        # 更新当前降维方法
+        current_reduction_method = method
 
         # 首先尝试从缓存加载
         reduced = load_reduced_data_from_h5(method)
@@ -282,14 +307,68 @@ def reduce_dimensions():
         else:
             print(f"从缓存加载{method.upper()}降维结果")
 
-        # 创建新的3D图
-        fig = create_3d_plot(reduced, current_labels)
+        # 检查是否有FPS数据并保持范围状态
+        fps_data = load_fps_results_from_h5()
+        if fps_data is not None:
+            selected_indices = fps_data['selected_indices']
 
-        return jsonify({
-            'success': True,
-            'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
-            'method': method
-        })
+            # 如果有有效的范围设置，直接创建范围可视化
+            if (fps_range_visible and current_range_start is not None and current_range_end is not None and
+                    1 <= current_range_start <= current_range_end <= len(selected_indices)):
+
+                # 转换为0-based索引
+                start_range_0based = current_range_start - 1
+                end_range_0based = current_range_end - 1
+                range_indices = selected_indices[start_range_0based:end_range_0based + 1]
+
+                # 创建范围可视化
+                fig = create_fps_range_visualization(
+                    reduced, current_labels, selected_indices, range_indices, start_range_0based
+                )
+
+                # 计算范围统计信息
+                fps_sampler = create_fps_sampler()
+                range_stats = fps_sampler.get_path_statistics(
+                    current_embeddings, range_indices, current_labels, fps_data['distance_metric']
+                )
+
+                return jsonify({
+                    'success': True,
+                    'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                    'method': method,
+                    'has_fps': True,
+                    'fps_data': {
+                        'selected_indices': selected_indices,
+                        'total_count': len(selected_indices)
+                    },
+                    'range_view': True,
+                    'range_stats': range_stats
+                })
+            else:
+                # 没有范围设置或范围无效，创建完整的FPS可视化
+                fig = create_fps_visualization(reduced, current_labels, selected_indices)
+
+                return jsonify({
+                    'success': True,
+                    'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                    'method': method,
+                    'has_fps': True,
+                    'fps_data': {
+                        'selected_indices': selected_indices,
+                        'total_count': len(selected_indices)
+                    },
+                    'range_view': False
+                })
+        else:
+            # 没有FPS数据，创建普通的3D图
+            fig = create_3d_plot_with_fps(reduced, current_labels)
+
+            return jsonify({
+                'success': True,
+                'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                'method': method,
+                'has_fps': False
+            })
 
     except Exception as e:
         return jsonify({
@@ -349,7 +428,7 @@ def start_fps():
         save_fps_results_to_h5(selected_indices, distance_metric, stats)
 
         # 获取降维后的坐标用于可视化
-        reduced_data = load_reduced_data_from_h5('pca')  # 使用当前的降维方法
+        reduced_data = load_reduced_data_from_h5(current_reduction_method)
         if reduced_data is None:
             return jsonify({
                 'success': False,
@@ -412,7 +491,7 @@ def fps_range_view():
         )
 
         # 获取降维后的坐标
-        reduced_data = load_reduced_data_from_h5('pca')
+        reduced_data = load_reduced_data_from_h5(current_reduction_method)
 
         # 创建范围可视化
         fig = create_fps_range_visualization(
@@ -552,7 +631,8 @@ def create_fps_visualization(embeddings_3d, labels, selected_indices):
                 showlegend=(i == 0),
                 text=[f'Class {point_class} (FPS Rank {i + 1}, Index: {idx})'],
                 customdata=[idx],  # 添加原始索引作为数组
-                hovertemplate='<b>Class %{customdata} (FPS Rank ' + str(i + 1) + ')</b><br>' +
+                hovertemplate='<b>Class ' + str(point_class) + ' (FPS Rank ' + str(i + 1) + ')</b><br>' +
+                'Index: %{customdata}<br>' +
                 'X: %{x:.2f}<br>' +
                 'Y: %{y:.2f}<br>' +
                 'Z: %{z:.2f}<extra></extra>'
@@ -665,7 +745,8 @@ def create_fps_range_visualization(embeddings_3d, labels, all_selected_indices, 
                 showlegend=(i == 0),
                 text=[f'Class {point_class} (FPS Rank {fps_rank}, Index: {idx})'],
                 customdata=[idx],  # 添加原始索引作为数组
-                hovertemplate='<b>Class %{customdata} (FPS Rank ' + str(fps_rank) + ')</b><br>' +
+                hovertemplate='<b>Class ' + str(point_class) + ' (FPS Rank ' + str(fps_rank) + ')</b><br>' +
+                'Index: %{customdata}<br>' +
                 'X: %{x:.2f}<br>' +
                 'Y: %{y:.2f}<br>' +
                 'Z: %{z:.2f}<extra></extra>'
@@ -699,7 +780,8 @@ def create_fps_range_visualization(embeddings_3d, labels, all_selected_indices, 
                 showlegend=(i == 0),
                 text=[f'Class {point_class} (FPS Rank {fps_rank}, Index: {idx})'],
                 customdata=[idx],  # 添加原始索引作为数组
-                hovertemplate='<b>Class %{customdata} (FPS Rank ' + str(fps_rank) + ')</b><br>' +
+                hovertemplate='<b>Class ' + str(point_class) + ' (FPS Rank ' + str(fps_rank) + ')</b><br>' +
+                'Index: %{customdata}<br>' +
                 'X: %{x:.2f}<br>' +
                 'Y: %{y:.2f}<br>' +
                 'Z: %{z:.2f}<extra></extra>'
