@@ -1,7 +1,6 @@
 numpy
 scikit-learn
 matplotlib
-PyQt5
 scipy
 umap-learn
 pandas

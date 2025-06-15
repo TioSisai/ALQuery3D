@@ -1,7 +1,7 @@
 # ALQuery3D
-一个纯python实现的高维embeddings的主动学习样本点查询算法在三维空间中的可视化项目
-前端使用python的pyqt以及相关的三维可视化库实现
-后端使用python的numpy,scipy和scikit-learn等等CPU-only的库实现
+一个纯Python实现的高维embeddings生成器，专为主动学习研究设计
+提供Web界面进行参数控制和3D可视化
+后端使用numpy、scipy和scikit-learn等CPU-only库实现
 
 ## 项目结构
 
@@ -11,11 +11,18 @@ ALQuery3D/
 │   ├── data/                     # 数据处理模块
 │   │   ├── __init__.py
 │   │   └── embedding_generator.py  # 高维embeddings生成器
+│   ├── web/                      # Web界面
+│   │   ├── app.py               # Flask后端
+│   │   └── templates/
+│   │       └── index.html       # Web前端界面
 │   └── __init__.py
+├── data/                         # 数据缓存目录
+│   └── tmp_data.h5              # HDF5缓存文件
 ├── examples/                     # 示例代码
 │   └── generate_embeddings_demo.py  # embeddings生成演示
 ├── tests/                        # 测试目录
 │   └── test_embedding_generator.py  # 单元测试
+├── run_web.py                    # Web应用启动脚本
 ├── requirements.txt              # 项目依赖
 ├── README.md
 └── LICENSE
@@ -36,11 +43,12 @@ ALQuery3D/
 
 ### 2. 主要功能
 
-- ✅ **高维embeddings生成**: 生成指定维度的embeddings
+- ✅ **高维embeddings生成**: 支持3-2048维embeddings生成
+- ✅ **Web可视化界面**: 现代化的Web界面，支持实时参数调节
 - ✅ **参数化控制**: 精确控制数据的各种几何特性
 - ✅ **降维可视化**: 支持PCA、t-SNE、UMAP等降维方法进行3D可视化
-- ✅ **数据保存和加载**: 支持embeddings的持久化存储
-- ✅ **统计信息计算**: 提供详细的类内/类间距离统计
+- ✅ **智能缓存系统**: HDF5缓存提升性能，避免重复计算
+- ✅ **数据标准化**: 自动标准化到-1~1范围
 - ✅ **灵活的API**: 提供便捷函数和详细的参数控制
 
 ## 安装依赖
@@ -57,7 +65,24 @@ pip install numpy scikit-learn matplotlib scipy
 
 ## 快速开始
 
-### 基本使用
+### Web界面使用
+
+启动Web应用：
+
+```bash
+python run_web.py
+```
+
+然后在浏览器中访问 `http://localhost:5000`
+
+**Web界面功能**：
+- 🎛️ **参数控制**: 直观的滑动条和输入框控制所有参数
+- 📊 **实时可视化**: 3D交互式图表，支持旋转、缩放
+- 🔄 **降维方法切换**: 一键切换PCA、t-SNE、UMAP
+- 💾 **智能缓存**: 自动缓存降维结果，提升响应速度
+- 📈 **统计信息**: 实时显示数据统计和维度信息
+
+### 编程接口使用
 
 ```python
 from src.data.embedding_generator import EmbeddingGenerator
@@ -131,6 +156,13 @@ embeddings, labels = create_sample_dataset(
 
 ## 运行演示
 
+### Web界面演示
+```bash
+# 启动Web应用
+python run_web.py
+```
+
+### 编程接口演示
 ```bash
 # 运行完整演示
 python examples/generate_embeddings_demo.py
@@ -152,7 +184,8 @@ python tests/test_embedding_generator.py
 
 | 参数 | 类型 | 范围 | 说明 |
 |------|------|------|------|
-| `n_samples_per_class` | List[int] | > 0 | 每个类别的样本数量列表 |
+| `n_samples_per_class` | List[int] | 10-5000 | 每个类别的样本数量列表 |
+| `embedding_dim` | int | 3-2048 | Embedding维度 |
 | `dispersion` | float/List[float] | 0.0-1.0 | 分散度，控制类内样本散布程度 |
 | `curvature` | float/List[float] | 0.0-1.0 | 曲度，控制非线性变形程度 |
 | `flatness` | float/List[float] | 0.0-1.0 | 扁平度，控制维度压缩程度 |
@@ -210,14 +243,32 @@ python tests/test_embedding_generator.py
 4. **可视化系统开发**: 为3D可视化系统提供数据源
 5. **机器学习教学**: 帮助理解高维数据的几何特性
 
+## 特性更新
+
+### v1.4.0 - Embedding维度设置功能
+- ✨ 新增：支持3-2048维embedding生成
+- ✨ 新增：3维数据智能降维处理
+- ✨ 新增：Web界面维度设置控件
+- ✨ 新增：动态维度参数覆盖
+
+### v1.3.0 - Web界面和缓存系统
+- ✨ 新增：现代化Web界面
+- ✨ 新增：HDF5智能缓存系统
+- ✨ 新增：实时3D可视化
+- ✨ 新增：参数范围扩展和标准化
+
+### v1.2.0 - 降维和参数系统
+- ✨ 新增：t-SNE、UMAP降维支持
+- ✨ 新增：每类别独立参数控制
+- ✨ 新增：参数范围标准化到0-1
+
 ## 下一步开发计划
 
 - [ ] 添加更多非线性变换类型
-- [x] 实现t-SNE、UMAP等非线性降维方法
 - [ ] 添加噪声注入功能
-- [ ] 实现PyQt5的3D可视化界面
 - [ ] 添加主动学习查询算法
 - [ ] 支持更多数据导出格式
+- [ ] 添加批量实验功能
 
 ## 许可证
 
