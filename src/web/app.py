@@ -68,7 +68,7 @@ def generate_embeddings():
         current_generator = None
         current_embeddings = None
         current_labels = None
-        current_reduction_method = 'pca'  # 重置为默认降维方法
+        # 注意：不重置current_reduction_method，保持用户当前选择的方法
 
         data = request.json
 
@@ -385,7 +385,7 @@ def reduce_dimensions():
 @app.route('/api/fps/start', methods=['POST'])
 def start_fps():
     """开始FPS采样"""
-    global current_embeddings, current_labels
+    global current_embeddings, current_labels, current_reduction_method, current_generator
 
     if current_embeddings is None:
         return jsonify({
@@ -393,11 +393,27 @@ def start_fps():
             'error': 'No embeddings generated yet'
         })
 
+    if current_generator is None:
+        return jsonify({
+            'success': False,
+            'error': 'No generator available'
+        })
+
     try:
         data = request.json
         start_idx = int(data['start_idx'])
         num_samples = int(data['num_samples'])
         distance_metric = data.get('distance_metric', 'euclidean')
+
+        # 获取前端当前选择的降维方法，如果没有则使用当前的方法
+        frontend_method = data.get('reduction_method')
+        if frontend_method and frontend_method != current_reduction_method:
+            current_reduction_method = frontend_method
+            print(f"更新降维方法为: {current_reduction_method}")
+
+        # 确保有有效的降维方法
+        if current_reduction_method is None:
+            current_reduction_method = 'pca'  # 默认使用PCA
 
         # 验证参数
         if start_idx >= len(current_embeddings):
@@ -435,10 +451,18 @@ def start_fps():
         # 获取降维后的坐标用于可视化
         reduced_data = load_reduced_data_from_h5(current_reduction_method)
         if reduced_data is None:
-            return jsonify({
-                'success': False,
-                'error': 'No reduced data available for visualization'
-            })
+            # 如果缓存中没有当前降维方法的数据，重新计算
+            print(f"缓存中没有{current_reduction_method.upper()}数据，重新计算...")
+            try:
+                reduced_data = current_generator.reduce_dimensions(n_components=3, method=current_reduction_method)
+                # 保存到缓存
+                save_reduced_data_to_h5(current_reduction_method, reduced_data)
+                print(f"已重新计算并保存{current_reduction_method.upper()}降维结果")
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to compute {current_reduction_method.upper()} reduction: {str(e)}'
+                })
 
         # 创建包含FPS路径的可视化
         fig = create_fps_visualization(reduced_data, current_labels, selected_indices)
@@ -460,10 +484,34 @@ def start_fps():
 @app.route('/api/fps/range', methods=['POST'])
 def fps_range_view():
     """FPS范围查看"""
+    global current_embeddings, current_labels, current_reduction_method, current_generator
+
+    if current_embeddings is None:
+        return jsonify({
+            'success': False,
+            'error': 'No embeddings generated yet'
+        })
+
+    if current_generator is None:
+        return jsonify({
+            'success': False,
+            'error': 'No generator available'
+        })
+
     try:
         data = request.json
         start_range = int(data['start_range'])
         end_range = int(data['end_range'])
+
+        # 获取前端当前选择的降维方法，如果没有则使用当前的方法
+        frontend_method = data.get('reduction_method')
+        if frontend_method and frontend_method != current_reduction_method:
+            current_reduction_method = frontend_method
+            print(f"更新降维方法为: {current_reduction_method}")
+
+        # 确保有有效的降维方法
+        if current_reduction_method is None:
+            current_reduction_method = 'pca'  # 默认使用PCA
 
         # 从HDF5文件加载FPS结果
         fps_data = load_fps_results_from_h5()
@@ -497,6 +545,19 @@ def fps_range_view():
 
         # 获取降维后的坐标
         reduced_data = load_reduced_data_from_h5(current_reduction_method)
+        if reduced_data is None:
+            # 如果缓存中没有当前降维方法的数据，重新计算
+            print(f"缓存中没有{current_reduction_method.upper()}数据，重新计算...")
+            try:
+                reduced_data = current_generator.reduce_dimensions(n_components=3, method=current_reduction_method)
+                # 保存到缓存
+                save_reduced_data_to_h5(current_reduction_method, reduced_data)
+                print(f"已重新计算并保存{current_reduction_method.upper()}降维结果")
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to compute {current_reduction_method.upper()} reduction: {str(e)}'
+                })
 
         # 创建范围可视化
         fig = create_fps_range_visualization(

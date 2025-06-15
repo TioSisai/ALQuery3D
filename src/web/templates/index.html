@@ -969,7 +969,8 @@
                 body: JSON.stringify({
                     start_idx: startIdx,
                     num_samples: numSamples,
-                    distance_metric: distanceMetric
+                    distance_metric: distanceMetric,
+                    reduction_method: currentMethod  // 传递当前选择的降维方法
                 })
             })
                 .then(response => response.json())
@@ -1029,7 +1030,8 @@
                 },
                 body: JSON.stringify({
                     start_range: startRange0Based,
-                    end_range: endRange0Based
+                    end_range: endRange0Based,
+                    reduction_method: currentMethod  // 传递当前选择的降维方法
                 })
             })
                 .then(response => response.json())
