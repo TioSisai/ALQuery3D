@@ -68,6 +68,7 @@ def generate_embeddings():
         num_classes = data['num_classes']
         class_params = data['class_params']
         inter_class_distance = data['inter_class_distance']
+        inter_hyperplane_parallelism = data.get('inter_hyperplane_parallelism', 0.0)
         embedding_dim = data.get('embedding_dim', 128)
 
         # 构建生成器参数
@@ -76,6 +77,11 @@ def generate_embeddings():
         curvature_list = []
         flatness_list = []
         correlation_list = []
+        manifold_complexity_list = []
+        feature_sparsity_list = []
+        noise_level_list = []
+        boundary_sharpness_list = []
+        dimensional_anisotropy_list = []
 
         for i in range(num_classes):
             params = class_params[str(i)]
@@ -84,6 +90,11 @@ def generate_embeddings():
             curvature_list.append(float(params['curvature']))
             flatness_list.append(float(params['flatness']))
             correlation_list.append(float(params['correlation']))
+            manifold_complexity_list.append(float(params.get('manifold', 0.2)))
+            feature_sparsity_list.append(float(params.get('sparsity', 0.1)))
+            noise_level_list.append(float(params.get('noise', 0.05)))
+            boundary_sharpness_list.append(float(params.get('sharpness', 0.5)))
+            dimensional_anisotropy_list.append(float(params.get('anisotropy', 0.3)))
 
         generator_params = {
             'n_samples_per_class': n_samples_per_class,
@@ -91,7 +102,13 @@ def generate_embeddings():
             'curvature': curvature_list,
             'flatness': flatness_list,
             'inter_class_distance': float(inter_class_distance),
-            'intra_class_correlation': correlation_list
+            'intra_class_correlation': correlation_list,
+            'inter_hyperplane_parallelism': float(inter_hyperplane_parallelism),
+            'manifold_complexity': manifold_complexity_list,
+            'feature_sparsity': feature_sparsity_list,
+            'noise_level': noise_level_list,
+            'boundary_sharpness': boundary_sharpness_list,
+            'dimensional_anisotropy': dimensional_anisotropy_list
         }
 
         # 生成embeddings

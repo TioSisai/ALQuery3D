@@ -392,6 +392,15 @@
                             oninput="updateInput('inter-distance-slider', 'inter-distance')">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label for="hyperplane-parallelism">Hyperplane Parallelism:</label>
+                    <input type="number" id="hyperplane-parallelism" class="form-control" min="0" max="1" step="0.01"
+                        value="0.0" oninput="updateSlider('hyperplane-parallelism', 'hyperplane-parallelism-slider')">
+                    <div class="slider-container">
+                        <input type="range" id="hyperplane-parallelism-slider" class="slider" min="0" max="100"
+                            value="0" oninput="updateInput('hyperplane-parallelism-slider', 'hyperplane-parallelism')">
+                    </div>
+                </div>
             </div>
 
             <!-- 降维方法选择 -->
@@ -516,6 +525,51 @@
                            min="0" max="100" value="30" 
                            oninput="updateInput('correlation-slider-${classId}', 'correlation-${classId}')">
                 </div>
+                <div class="param-row">
+                    <span class="param-label">Manifold:</span>
+                    <input type="number" class="param-input" id="manifold-${classId}" 
+                           min="0" max="1" step="0.01" value="0.2" 
+                           oninput="updateSlider('manifold-${classId}', 'manifold-slider-${classId}')">
+                    <input type="range" class="param-slider" id="manifold-slider-${classId}" 
+                           min="0" max="100" value="20" 
+                           oninput="updateInput('manifold-slider-${classId}', 'manifold-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Sparsity:</span>
+                    <input type="number" class="param-input" id="sparsity-${classId}" 
+                           min="0" max="1" step="0.01" value="0.1" 
+                           oninput="updateSlider('sparsity-${classId}', 'sparsity-slider-${classId}')">
+                    <input type="range" class="param-slider" id="sparsity-slider-${classId}" 
+                           min="0" max="100" value="10" 
+                           oninput="updateInput('sparsity-slider-${classId}', 'sparsity-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Noise:</span>
+                    <input type="number" class="param-input" id="noise-${classId}" 
+                           min="0" max="1" step="0.01" value="0.05" 
+                           oninput="updateSlider('noise-${classId}', 'noise-slider-${classId}')">
+                    <input type="range" class="param-slider" id="noise-slider-${classId}" 
+                           min="0" max="100" value="5" 
+                           oninput="updateInput('noise-slider-${classId}', 'noise-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Sharpness:</span>
+                    <input type="number" class="param-input" id="sharpness-${classId}" 
+                           min="0" max="1" step="0.01" value="0.5" 
+                           oninput="updateSlider('sharpness-${classId}', 'sharpness-slider-${classId}')">
+                    <input type="range" class="param-slider" id="sharpness-slider-${classId}" 
+                           min="0" max="100" value="50" 
+                           oninput="updateInput('sharpness-slider-${classId}', 'sharpness-${classId}')">
+                </div>
+                <div class="param-row">
+                    <span class="param-label">Anisotropy:</span>
+                    <input type="number" class="param-input" id="anisotropy-${classId}" 
+                           min="0" max="1" step="0.01" value="0.3" 
+                           oninput="updateSlider('anisotropy-${classId}', 'anisotropy-slider-${classId}')">
+                    <input type="range" class="param-slider" id="anisotropy-slider-${classId}" 
+                           min="0" max="100" value="30" 
+                           oninput="updateInput('anisotropy-slider-${classId}', 'anisotropy-${classId}')">
+                </div>
             `;
             return block;
         }
@@ -566,6 +620,7 @@
         function generateEmbeddings() {
             const numClasses = parseInt(document.getElementById('num-classes').value);
             const interDistance = parseFloat(document.getElementById('inter-distance').value);
+            const hyperplaneParallelism = parseFloat(document.getElementById('hyperplane-parallelism').value);
             const embeddingDim = parseInt(document.getElementById('embedding-dim').value);
 
             // 收集类别参数
@@ -576,7 +631,12 @@
                     dispersion: parseFloat(document.getElementById(`dispersion-${i}`).value),
                     curvature: parseFloat(document.getElementById(`curvature-${i}`).value),
                     flatness: parseFloat(document.getElementById(`flatness-${i}`).value),
-                    correlation: parseFloat(document.getElementById(`correlation-${i}`).value)
+                    correlation: parseFloat(document.getElementById(`correlation-${i}`).value),
+                    manifold: parseFloat(document.getElementById(`manifold-${i}`).value),
+                    sparsity: parseFloat(document.getElementById(`sparsity-${i}`).value),
+                    noise: parseFloat(document.getElementById(`noise-${i}`).value),
+                    sharpness: parseFloat(document.getElementById(`sharpness-${i}`).value),
+                    anisotropy: parseFloat(document.getElementById(`anisotropy-${i}`).value)
                 };
             }
 
@@ -595,6 +655,7 @@
                     num_classes: numClasses,
                     class_params: classParams,
                     inter_class_distance: interDistance,
+                    inter_hyperplane_parallelism: hyperplaneParallelism,
                     embedding_dim: embeddingDim
                 })
             })
