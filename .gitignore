@@ -1,6 +1,9 @@
 /.vscode/
+/.cursor/
 /.roo/
 /context_portal/
+/logs/
+*.log
 *.png
 *.npy
 *.h5
