@@ -1,5 +1,6 @@
 /.vscode/
-/.cursor/
+/.roo/
+/context_portal/
 *.png
 *.npy
 *.h5
